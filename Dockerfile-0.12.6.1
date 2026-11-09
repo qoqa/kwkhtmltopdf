@@ -1,13 +1,15 @@
 # first stage: build kwkhtmltopdf_server
 
-FROM --platform=linux/amd64 docker.io/golang:1.23.3
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.23.3
+ARG TARGETOS TARGETARCH
 WORKDIR /tmp
 COPY server/kwkhtmltopdf_server.go .
-RUN go build kwkhtmltopdf_server.go
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build kwkhtmltopdf_server.go
 
 # second stage: server with wkhtmltopdf
 
-FROM --platform=linux/amd64 docker.io/ubuntu:22.04
+FROM docker.io/ubuntu:22.04
+ARG TARGETARCH
 
 RUN set -x \
   && apt update \
@@ -24,8 +26,13 @@ RUN set -x \
     xfonts-base \
     fonts-lato \
     tini \
-  && wget -q -O /tmp/wkhtmltox.deb https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.jammy_amd64.deb \
-  && echo "800eb1c699d07238fee77bf9df1556964f00ffcf /tmp/wkhtmltox.deb" | sha1sum -c - \
+  && case "$TARGETARCH" in \
+    amd64) WKHTMLTOX_SHA1=800eb1c699d07238fee77bf9df1556964f00ffcf ;; \
+    arm64) WKHTMLTOX_SHA1=0edcc573e8bbd7ba12885671e75cee8efe3ae11d ;; \
+    *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+  esac \
+  && wget -q -O /tmp/wkhtmltox.deb https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.jammy_${TARGETARCH}.deb \
+  && echo "${WKHTMLTOX_SHA1} /tmp/wkhtmltox.deb" | sha1sum -c - \
   && dpkg -i /tmp/wkhtmltox.deb \
   && apt -f install \
   && apt -y purge wget --autoremove \
